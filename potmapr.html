@@ -288,7 +288,7 @@ td, th {
             <div class="button-container">
                 <button id="clearMapAndTablesBtn">Clear Map & Tables</button>
                 <button onclick="saveMapAsImage()">Save Map Image</button>
-                <button id="toggle-scatter-plot">Open/Close Subsurface View</button>
+                <button id="toggle-scatter-plot">Open Subsurface View</button>
             </div>
             
             <!-- Tab headers -->
@@ -338,7 +338,6 @@ td, th {
             </div>
             <div id="scatter-plot-container">
                 <h2>3D Subsurface</h2>
-                <button id="toggle-scatter-plot">Close Subsurface View</button>
                 <div id="scatter-plot"></div>
 
             </div>
@@ -516,33 +515,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 return wellData;
             }
 
-function drawInterpolatedElevations() {
-    clearInterpolatedElevationTable(); // Clear the existing interpolated points and table
 
-    if (wellData.length >= 2) { // Check for at least two points for interpolation
-        for (let i = 0; i < wellData.length - 1; i++) {  // Changed this line
-            const start = wellData[i];
-            const end = wellData[i + 1];  // Changed this line
-
-            const startElevation = Math.min(start.elevation, end.elevation);
-            const endElevation = Math.max(start.elevation, end.elevation);
-
-            for (let elev = Math.ceil(startElevation * 4) / 4; elev < endElevation; elev += 0.25) {
-                const fraction = (elev - start.elevation) / (endElevation - startElevation);
-                const interpolatedPoint = turf.along(
-                    turf.lineString([[start.lng, start.lat], [end.lng, end.lat]]),
-                    fraction * turf.distance(turf.point([start.lng, start.lat]), turf.point([end.lng, end.lat])),
-                    { units: 'kilometers' }
-                );
-                const coord = interpolatedPoint.geometry.coordinates;
-
-                const reversedElevation = 0 - elev; // Reverse the elevation for the marker
-                addInterpolatedPointToTable(coord[1], coord[0], reversedElevation); // Use reversed elevation
-                addInterpolatedMarker(coord[1], coord[0], reversedElevation); // Add the interpolated marker
-            }
-        }
-    }
-}
 
         function addInterpolatedPointToTable(lat, lng, elevation) {
             const tableBody = document.querySelector('#elevation-table-interpolated tbody');
@@ -735,32 +708,56 @@ function drawInterpolatedElevations() {
             }
         }, true);
     });
-$(function() {
-    $("#scatter-plot-container").draggable();
-});
-$("#scatter-plot-container").on('mousedown', function(event) {
-    // Check if the mousedown event happened inside the Plotly plot
-    if ($(event.target).closest('#scatter-plot').length) {
-        // If it did, disable the jQuery UI draggable
-        $("#scatter-plot-container").draggable('disable');
-    } else {
-        // If it didn't, enable the jQuery UI draggable
-        $("#scatter-plot-container").draggable('enable');
-    }
-});
 $(document).ready(function() {
-    $("#toggle-scatter-plot, #scatter-plot").click(function() {
-        $("#scatter-plot-container").toggle();  // Toggles visibility
-        
+    var offsetX, offsetY;
+    var $scatterPlotContainer = $("#scatter-plot-container");
+    
+    $scatterPlotContainer.draggable({
+        cancel: "#scatter-plot, #toggle-scatter-plot", // Exclude Plotly plot and the close button from initiating a drag action
+
+        start: function(event, ui) {
+            // Record the initial offset between the cursor and the top-left corner of the draggable
+            offsetX = event.clientX - ui.offset.left;
+            offsetY = event.clientY - ui.offset.top;
+        },
+
+        drag: function(event, ui) {
+            // Adjust the position of the draggable during the drag
+            ui.position.left = event.clientX - offsetX;
+            ui.position.top = event.clientY - offsetY;
+        }
+    });
+
+    // If Plotly area is clicked or dragged, we simply prevent any default actions or bubbling up of events
+    $("#scatter-plot").on("mousedown", function(event) {
+        event.stopPropagation();
+        event.preventDefault();
+    });
+
+    // Close/Open button event listener
+    $("#toggle-scatter-plot").click(function(event) {
+        $scatterPlotContainer.toggle();  // Toggles visibility
+
         // Update button text based on visibility
-        if ($("#scatter-plot-container").is(":visible")) {
-            $("#toggle-scatter-plot").text("Close Subsurface View");
+        if ($scatterPlotContainer.is(":visible")) {
+            $(this).text("Close Subsurface View");
         } else {
-            $("#toggle-scatter-plot").text("Open Subsurface View");
+            $(this).text("Open Subsurface View");
+        }
+
+        // Prevent this click from propagating further
+        event.stopPropagation();
+        event.preventDefault();
+    });
+
+    // Given the structure, we don't want any accidental clicks outside the scatter-plot to hide the container
+    $(document).on("click", function(event) {
+        // If click is outside the scatter-plot-container, do nothing
+        if (!$(event.target).closest("#scatter-plot-container").length) {
+            event.stopPropagation();
         }
     });
 });
-
 </script>
 </body>
 </html>
