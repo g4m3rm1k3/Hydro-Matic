@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@6.3.0/turf.min.js"></script>
+<!-- Include Plotly.js library -->
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<!-- Include D3.js library for data manipulation -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-save-map@0.3.0/dist/leaflet-save-map.js"></script>
+    <title>Ground Water Height Interpolator</title>
+    <style>
+/* Define color variables for consistency */
+:root {
+  --primary-bg-color: #222;
+  --secondary-bg-color: #333;
+  --accent-color: #4CAF50;
+  --hover-color: #45a049;
+  --text-color: #fff;
+  --table-border-color: #888;
+  --body-bg-color: #222;
+  --header-text-color: #fff;
+  --card-bg-color: #444;
+  --table-bg-color: #333;
+  --button-text-color: #fff;
+  --menu-bg-color: #444;
+  --menu-border-color: #555;
+  --footer-bg-color: #222;
+  --footer-text-color: #fff;
+}
+body, html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Arial', sans-serif;
+  background-color: var(--primary-bg-color);
+  color: var(--text-color);
+}
+/* Style for the header containing the buttons and favicon */
+#header {
+    text-align: left;
+    padding: 1px;
+    background-color: var(--primary-bg-color); /* Use existing primary background color */
+  margin-bottom: 10px;
+}
+/* Style for the favicon image */
+#header img {
+    vertical-align: middle; /* Align the image vertically with the buttons */
+    margin-right: 10px; /* Add some space between the image and buttons */
+    max-width: 10px; /* Limit the maximum width of the image */
+    max-height: 10px; /* Limit the maximum width of the image */
+
+}
+/* Style for the buttons */
+#homeButton,
+#aboutButton,
+#mymapsbutton {
+    background-color: var(--primary-button-color); /* Use existing primary button color */
+    color: #fff; /* Button text color */
+    padding: 2px 2px; /* Button padding */
+    border: none; /* Remove button border */
+    border-radius: 5px; /* Rounded corners */
+    margin: 5px; /* Margin around buttons */
+    cursor: pointer; /* Cursor style on hover */
+    width: 100%; /* Make buttons full width on small screens */
+    max-width: 5vw; /* Limit maximum width for larger screens */
+}
+/* Style for the buttons on hover */
+#homeButton:hover,
+#aboutButton:hover,
+#mymapsbutton:hover {
+    background-color: var(--primary-button-hover-color); /* Use existing primary button hover color */
+}
+/* Media query for small screens (phones) */
+@media (max-width: 768px) {
+    /* Reduce padding and margin for smaller screens */
+    #homeButton,
+    #aboutButton {
+        padding: 10px 15px;
+        margin: 5px;
+    }
+}
+/* Layout styles for the container */
+.container {
+  display: flex;
+  min-height: 100vh;
+  flex-wrap: wrap; /* Added to handle wrapping on smaller screens */
+}
+
+/* Map container styles */
+#map-container, #map {
+  height: 95vh;
+  width: 100%;
+}
+/* Content styles */
+#content {
+  flex-grow: 1;
+  padding: 1px 1px;
+  position: relative;
+}
+/* Sidebar styles */
+#sidebar {
+  width: 25%;
+  background-color: var(--secondary-bg-color);
+  padding: 20px 10px 10px 10px;
+  overflow-y: auto;
+  max-height: calc(100vh - 10px);
+}
+
+/* Collapsible header styles */
+.collapsible-header {
+  background-color: #444;
+  color: var(--text-color);
+  cursor: pointer;
+  padding: 10px;
+  border: 1px solid var(--secondary-bg-color);
+  border-radius: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background-color 0.3s, transform 0.3s;
+}
+.collapsible-header:hover {
+  background-color: var(--hover-color);
+}
+.collapsible-header:after {
+  content: '▼';
+}
+.collapsible-header.active:after {
+  transform: rotate(180deg);
+}
+/* Collapsible content styles */
+.collapsible-content {
+  display: none;
+  overflow: hidden;
+  transition: max-height 0.3s;
+}
+.collapsible-content.active {
+  display: block;
+}
+/* Table styles */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  border: 1px solid var(--table-border-color);
+  padding: 0.5rem;
+  text-align: left;
+}
+/*  limit table rows and enable scrolling */
+#wells-table, #elevation-table-interpolated {
+  max-height: 30vh;
+  overflow-y: auto; /* Enable vertical scrolling */
+}
+/* Button styles */
+.button-container {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px; /* Add margin at the bottom to create space */
+}
+button {
+  background-color: var(--accent-color);
+  border: none;
+  padding: 10px;
+  text-align: center;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--button-text-color);
+}
+button:hover {
+  background-color: var(--hover-color);
+}
+/* Marker and label styles */
+.interpolated-point, .elevation-label {
+  border-radius: 4px;
+  padding: 4px;
+  font-size: 14px;
+}
+.interpolated-point {
+  background-color: white;
+  color: blue;
+}
+.elevation-label {
+  background-color: rgba(0, 0, 0, 0.6);
+  color: var(--text-color);
+  padding: 4px 8px;
+}
+/* 3D Scatter Plot styles */
+#scatter-plot-container {
+  background-color: var(--secondary-bg-color);
+  padding: 10px;
+  margin-right: 10px;
+  border-radius: 4px;
+  width: 30%;  
+  height: 70%; 
+  display: flex;  
+  justify-content: center; 
+  align-items: center;  
+  flex-direction: column; 
+  position: absolute;
+  z-index: 1000;
+    display: none; /* hidden */
+    top: 70%;  
+    right: 2%; 
+    transform: translateY(-50%); /*center it vertically */
+}
+#scatter-plot h2 {
+  margin: 0px 20px 0px 20px;
+  font-size: 14px;
+  color: var(--text-color);
+}
+#scatter-plot {
+  max-width: 60%;  /* plot stays within the container's bounds */
+  max-height: 60%;  
+}
+/* Map settings container styles */
+#map-settings-container {
+  background-color: var(--secondary-bg-color);  /* Consistent with other containers */
+  padding: 20px 10px 10px 10px;  /* Padding consistent with sidebar */
+  border-radius: 4px;  /* Consistent with other UI elements */
+  width: 30%;  /* Custom width; adjust as needed */
+  position: absolute;  /* To allow custom placement */
+  top: 10%;  /* Custom vertical position; adjust as needed */
+  right: 2%;  /* Custom horizontal position; adjust as needed */
+  z-index: 1001;  /* Make sure it appears above other elements */
+  display: none;  /* Initially hidden */
+}
+/* Tab Styles */
+#tab-container {
+  display: flex;
+  justify-content: start;
+  border-bottom: 2px solid var(--table-border-color);
+  margin-bottom: 20px;
+}
+.tab {
+  padding: 10px 20px;
+  margin-right: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-color);
+  background-color: var(--secondary-bg-color);
+  border: 1px solid var(--table-border-color);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+}
+.tab:hover {
+  background-color: var(--hover-color);
+}
+.active-tab {
+  background-color: var(--primary-bg-color);
+  color: var(--text-color);
+  border: 1px solid var(--table-border-color);
+  border-bottom: 2px solid var(--primary-bg-color);
+}
+/* Table Styles */
+table {
+  display: none;  /* Initially hidden */
+  width: 100%;
+  border-collapse: collapse;
+}
+td, th {
+  border: 1px solid var(--table-border-color);
+  padding: 0.5rem;
+  text-align: left;
+}
+/* Responsive table height */
+@media screen and (max-width: 768px) {
+  #wells-table, #elevation-table-interpolated {
+    max-height: 15vh;
+  }
+}
+@media screen and (max-width: 480px) {
+  #wells-table, #elevation-table-interpolated {
+    max-height: 10vh;
+  }
+}
+/* close button */
+#scatter-plot-container #toggle-scatter-plot {
+    position: absolute;
+    top: 80vh;   
+    right: 10vw; 
+    background-color: #cc7700;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 0.9rem;  /* font size responsiveness */
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+#scatter-plot-container #toggle-scatter-plot:hover {
+    background-color: rgba(255, 255, 255, 1); /* white on hover */
+}
+.modal {
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    position: fixed;
+    z-index: 1000;
+
+flex-direction: column;  /* Stack children vertically */
+    padding-top: 10vh;
+    width: 25vw;
+    height: 5vh;
+}
+.modal-content {
+    justify-content: center; /* Horizontally center*/
+    align-items: center; /* Vertically center */
+    background-color: var(--primary-bg-color); 
+    padding: 5px;
+    flex-direction: column;  
+    border: 1px solid var(--table-border-color); 
+    width: 10vw;
+    height: 15vh;
+}
+.close {
+    color: var(--text-color); 
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+.close:hover,
+.close:focus {
+    color: var(--table-bg-color); /*table background color  */
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/*footer styles */
+#footer {
+  background-color: var(--secondary-bg-color);
+  color: var(--text-color);
+  text-align: center;
+  width: 100%; /* Ensure full width */
+}
+
+    </style>
+</head>
+<body>
+<div id="content">
+   <div id="header">
+        <button id="homeButton">HOME</button>
+        <button id="aboutButton">About/How To</button>
+        <button id="mymapsbutton">My Maps</button>
+    </div>
+    <div class="container">
+        <div id="sidebar">
+            <h2>Hydr-O-Matic</h2>
+            <div class="button-container">
+                <button id="toggle-scatter-plot">Open Subsurface View</button>
+                <button id="toggle-map-settings">Map Configuration.</button>
+            <div id="scatter-plot-container">
+                <h2>3D Subsurface</h2>
+                <div id="scatter-plot"></div>
+
+            </div>
+            </div>
+            <!-- Tab headers -->
+<div class="tab-headers">
+   <span class="tab" id="wells-tab">Wells</span>
+   <span class="tab" id="elevation-tab">Interpolated</span>
+</div>
+<!-- Wells Data Table (Default Display) -->
+<div id="wells-table" class="tab-content">
+    <h3 id="wells-table-header" class="collapsible-header">Wells Table (+/-)</h3>
+    <table contenteditable="true"> <!-- Made the entire table editable -->
+        <thead>
+            <tr>
+                <th>Well #</th>
+                <th>Well Name</th>
+                <th>Latitude</th>
+                <th>Longitude</th>
+                <th>Elevation</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>1</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+            <!-- Add more rows as needed -->
+        </tbody>
+    </table>
+</div>
+           <!-- Interpolated Elevation Data Table (Initially Hidden) -->
+            <div id="elevation-table-interpolated" class="tab-content" style="display:none;">
+                <h3 id="elevation-table-header" class="collapsible-header">Elevation Table (+/-)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Latitude</th>
+                            <th>Longitude</th>
+                            <th contenteditable="true">Elevation</th> <!-- Made editable -->
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+            <div id="map-settings-container" class="hidden">
+                <h2>Map Configuration</h2>
+                   <label for="elevation-step">Elevation Step Interval:</label>
+                    <input type="number" id="elevation-step" step="0.01" min="0" value="0.25"> 
+             </div>
+        <div id="content">
+            <div id="header"></div>
+            <div id="wellModal" class="modal">
+              <div class="modal-content">
+              <span class="close">&times;</span>
+              <form id="wellForm">
+                <label for="elevation">Elevation:</label>
+                <input type="number" id="elevation">
+                <label for="wellName">Well Name:</label>
+                <input type="text" id="wellName">
+                <button type="submit">Submit</button>
+            </form>
+        </div>
+    </div>
+     <div id="map-container">
+          <div id="map"></div>
+            </div>
+ <div id="footer">
+   <p>&copy; 2023 Latt</p>
+ </div>
+<script>
+document.addEventListener('DOMContentLoaded', (event) => {
+    const elevationStepInput = document.getElementById('elevation-step');
+
+    elevationStepInput.addEventListener('input', function() {
+        const newValue = parseFloat(this.value);
+        if (!isNaN(newValue) && newValue >= 0) {
+            elevationStep = newValue;
+            drawInterpolatedElevations(); // Optionally redraw with new elevation step
+        }
+    });
+});
+document.addEventListener('DOMContentLoaded', function () {
+const clearMapAndTablesButton = document.querySelector('button');
+const toggleWellsTableHeader = document.getElementById('wells-table-header');
+const toggleElevationTableHeader = document.getElementById('elevation-table-header');
+// Tab Toggle
+const wellsTab = document.getElementById("wells-tab");
+const elevationTab = document.getElementById("elevation-tab");
+const wellsTable = document.getElementById("wells-table");
+const elevationTable = document.getElementById("elevation-table-interpolated");
+function resetTabs() {
+ wellsTab.classList.remove("active-tab");
+ elevationTab.classList.remove("active-tab");
+ wellsTable.style.display = "none";
+ elevationTable.style.display = "none";
+}
+function activateTab(tabElement, contentElement) {
+  resetTabs();
+  tabElement.classList.add("active-tab");
+  contentElement.style.display = "block";
+}
+wellsTab.addEventListener("click", () => activateTab(wellsTab, wellsTable));
+elevationTab.addEventListener("click", () => activateTab(elevationTab, elevationTable));
+activateTab(wellsTab, wellsTable);  // Initialize by activating the first tab
+let mapMode = true;
+const wellData = [];
+const map = L.map('map').setView([30.9843, -91.9623], 8);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.esri.com/">Esri</a> contributors'
+}).addTo(map);
+// Modal setup
+const modal = document.getElementById("wellModal");
+const span = document.querySelector(".close");
+const form = document.getElementById("wellForm");
+// Initially hide the modal
+modal.style.display = "none";
+map.addEventListener('click', function (e) {
+    if (!mapMode) return;
+    // Show the modal
+    modal.style.display = "block";
+    // Calculate the modal's position near the cursor
+    const modalWidth = modal.offsetWidth;
+    const modalHeight = modal.offsetHeight;
+    const cursorX = e.originalEvent.clientX;
+    const cursorY = e.originalEvent.clientY;
+    // Set the modal's position with an offset
+    const offsetX = -10; // Adjust this value as needed
+    const offsetY = -10; // Adjust this value as needed
+    modal.style.left = cursorX - modalWidth / 2 + offsetX + "px";
+    modal.style.top = cursorY - modalHeight / 2 + offsetY + "px";
+    // Update the form submit event
+    form.onsubmit = function (event) {
+        event.preventDefault();
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+        const elevation = document.getElementById("elevation").value;
+        const wellName = document.getElementById("wellName").value;
+        addWellData(lat, lng, elevation, wellName);
+        // Clear the form input fields when the modal is opened
+        document.getElementById("elevation").value = "";
+        document.getElementById("wellName").value = "";
+        // Hide the modal after form submission
+        closeModal();
+    };
+});
+// Close the modal when the close button is clicked
+span.onclick = function () {
+    closeModal();
+};
+// Function to close the modal
+function closeModal() {
+    modal.style.display = "none";
+}
+function addWellData(lat, lng, elevation, wellName) {
+    if (elevation !== null && !isNaN(elevation) && wellName !== null) {
+        const wellID = wellData.length + 1;
+        wellData.push({ wellID, wellName, lat, lng, elevation: parseFloat(elevation) });
+        L.marker([lat, lng], {
+            title: wellName,
+            riseOnHover: true
+        }).addTo(map);
+        updateWellTable();
+        drawInterpolatedElevations();
+        updateScatterPlotWithWellData();
+    } else {
+        alert('Please enter a valid number for elevation and a valid name for the well.');
+    }
+}
+            toggleWellsTableHeader.addEventListener('click', toggleCollapsibleTable);
+            toggleElevationTableHeader.addEventListener('click', toggleCollapsibleTable);
+            function toggleCollapsibleTable() {
+                const tableContent = this.nextElementSibling;
+                if (tableContent.style.display === 'none' || tableContent.style.display === '') {
+                    tableContent.style.display = 'block';
+                } else {
+                    tableContent.style.display = 'none';
+                }
+            }
+            function updateWellTable() {
+                const tableBody = document.querySelector('#wells-table tbody');
+                tableBody.innerHTML = '';
+                wellData.forEach((well) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${well.wellID}</td>
+                        <td>${well.wellName}</td>
+                        <td>${well.lat.toFixed(6)}</td>
+                        <td>${well.lng.toFixed(6)}</td>
+                        <td>${well.elevation.toFixed(2)}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            }
+let elevationStep = 0.25; // Initialize with default value
+
+function drawInterpolatedElevations() {
+    if (wellData.length > 1) {
+        for (let i = 0; i < wellData.length; i++) {
+            const start = wellData[i];
+            const end = wellData[(i + 1) % wellData.length];
+            const startElevation = Math.min(start.elevation, end.elevation);
+            const endElevation = Math.max(start.elevation, end.elevation);
+            for (let elev = Math.ceil(startElevation * 4) / 4; elev < endElevation; elev += elevationStep) {
+                const fraction = (elev - start.elevation) / (end.elevation - start.elevation);
+                const interpolatedPoint = turf.along(
+                    turf.lineString([[start.lng, start.lat], [end.lng, end.lat]]),
+                    fraction * turf.distance(turf.point([start.lng, start.lat]), turf.point([end.lng, end.lat])),
+                    { units: 'kilometers' }
+                );
+                const coord = interpolatedPoint.geometry.coordinates;
+                const reversedElevation = 0 - elev; // Reverse the elevation for the marker
+                addInterpolatedPointToTable(coord[1], coord[0], reversedElevation); // Use reversed elevation
+                addInterpolatedMarker(coord[1], coord[0], reversedElevation); // Add the interpolated marker
+            }
+        }
+    }
+}
+            function addInterpolatedPointToTable(lat, lng, elevation) {
+                const tableBody = document.querySelector('#elevation-table-interpolated tbody');
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${lat.toFixed(6)}</td>
+                    <td>${lng.toFixed(6)}</td>
+                    <td>${elevation.toFixed(2)}</td>
+                `;
+                tableBody.appendChild(row);
+            }
+            function addInterpolatedMarker(lat, lng, elevation) {
+                L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: 'interpolated-point',
+                        html: `<span class="elevation-label">${elevation.toFixed(2)}</span>`,
+                    })
+                }).addTo(map);
+            }
+          // retrieve data from the Wells Table
+            function getDataFromTable() {
+                const tableRows = document.querySelectorAll('#wells-table tbody tr');
+                const wellData = [];
+                tableRows.forEach((row) => {
+                    const columns = row.querySelectorAll('td');
+                    const well = {
+                        wellName: columns[1].textContent,
+                        lat: parseFloat(columns[2].textContent),
+                        lng: parseFloat(columns[3].textContent),
+                        elevation: parseFloat(columns[4].textContent),
+                    };
+                    wellData.push(well);
+                });
+                return wellData;
+            }
+        // Update scatter plot
+        function updateScatterPlotWithWellData() {
+            const wellData = getDataFromTable();
+            const x = wellData.map(well => well.lng);
+            const y = wellData.map(well => well.lat);
+            const z = wellData.map(well => 0 - well.elevation); // Reverse the elevation
+            // Get map view bounds
+            const mapBounds = map.getBounds();
+            const xRange = [mapBounds.getWest(), mapBounds.getEast()]; // Longitude
+            const yRange = [mapBounds.getSouth(), mapBounds.getNorth()]; // Latitude
+            const zRange = [Math.min(...z), 0]; // Elevation (z-axis)
+            const tracePoints = {
+                x: x,
+                y: y,
+                z: z,
+                mode: 'markers',
+                type: 'scatter3d',
+                marker: {
+                    size: 8,
+                    color: z,
+                    colorscale: 'Viridis',
+                    colorbar: {
+                        title: 'Elevation',
+                    },
+                },
+                text: wellData.map(well => well.wellName),
+            };
+            const traceSurface = {
+                x: x,
+                y: y,
+                z: z,
+                type: 'mesh3d',
+                intensity: z,
+                colorscale: 'Viridis',
+                cmin: Math.min(...z),
+                cmax: Math.max(...z),
+                showscale: true,
+                opacity: 0.9,
+            };
+            const data = [tracePoints, traceSurface];
+            const layout = {
+                height: 600,
+                width: 600,
+                scene: {
+                    aspectratio: { x: 1, y: 1, z: 0.5 },
+                    xaxis: {
+                        title: 'Longitude',
+                        titlefont: {
+                            color: 'white',
+                        },
+                        tickfont: {
+                            color: 'white',
+                        },
+                        range: xRange,
+                    },
+                    yaxis: {
+                        title: 'Latitude',
+                        titlefont: {
+                            color: 'white',
+                        },
+                        tickfont: {
+                            color: 'white',
+                        },
+                        range: yRange,
+                    },
+                    zaxis: {
+                        range: zRange,
+                        title: 'Elevation',
+                        titlefont: {
+                            color: 'white',
+                        },
+                        tickfont: {
+                            color: 'white',
+                        },
+                    },
+                },
+                hovermode: 'closest',
+                plot_bgcolor: 'rgba(0, 0, 0, 0)',
+                paper_bgcolor: 'rgba(0, 0, 0, 0)',
+                scene_camera: {
+                    center: { x: 0, y: 0, z: -0.5 },
+                    eye: {
+                        x: 2.5,
+                        y: 2.5,
+                        z: 1.2,
+                    },
+                },
+            };
+
+            Plotly.react('scatter-plot', data, layout);
+        }
+    });
+$(document).ready(function() {
+    var dragging = false;
+    var scatterPlotVisible = true;
+
+    function centerScatterPlotContainer() {
+        var windowWidth = $(window).width();
+        var windowHeight = $(window).height();
+        var containerWidth = $scatterPlotContainer.width();
+        var containerHeight = $scatterPlotContainer.height();
+        var left = (windowWidth - containerWidth) / 2;
+        var top = (windowHeight - containerHeight) / 2;
+        top = top + (containerHeight * 0.6);
+        $scatterPlotContainer.css({
+            "left": left + "px",
+            "top": top + "px"
+        });
+    }
+
+    var $scatterPlotContainer = $("#scatter-plot-container");
+    centerScatterPlotContainer();
+
+    $scatterPlotContainer.draggable({
+        cancel: "#scatter-plot, #toggle-scatter-plot",
+        start: function(event, ui) {
+            dragging = true;
+        },
+        drag: function(event, ui) {
+            // No additional behavior needed while dragging
+        },
+        stop: function() {
+            dragging = false;
+        }
+    });
+
+    $("#toggle-scatter-plot").click(function(event) {
+        if (scatterPlotVisible) {
+            $scatterPlotContainer.hide();
+            $(this).text("Open Subsurface View");
+        } else {
+            $scatterPlotContainer.show();
+            $(this).text("Close Subsurface View");
+            centerScatterPlotContainer();
+        }
+        scatterPlotVisible = !scatterPlotVisible;
+        event.stopPropagation();
+        event.preventDefault();
+    });
+
+    $(document).on("click", function(event) {
+        if (!$(event.target).closest("#scatter-plot-container").length && scatterPlotVisible) {
+            $scatterPlotContainer.hide();
+            $("#toggle-scatter-plot").text("Open Subsurface View");
+            scatterPlotVisible = false;
+        }
+    });
+
+    var mapSettingsVisible = false;
+
+    const mapSettingsContainer = $("#map-settings-container");
+    const toggleMapSettingsButton = $("#toggle-map-settings");
+
+    toggleMapSettingsButton.click(function() {
+        if (mapSettingsVisible) {
+            mapSettingsContainer.hide();
+        } else {
+            mapSettingsContainer.show();
+        }
+        mapSettingsVisible = !mapSettingsVisible;
+    });
+// Function to toggle map settings
+function toggleMapSettings() {
+  const mapSettingsContainer = document.getElementById('map-settings-container');
+  if (mapSettingsContainer.style.display === 'none' || mapSettingsContainer.style.display === '') {
+    mapSettingsContainer.style.display = 'block';
+  } else {
+    mapSettingsContainer.style.display = 'none';
+  }
+}
+
+// Attach the listener
+document.addEventListener('DOMContentLoaded', function() {
+  const mapSettingsButton = document.getElementById('map-settings-button');
+  if (mapSettingsButton) {
+    mapSettingsButton.addEventListener('click', toggleMapSettings);
+  }
+});
+});
+
+
+</script>
+</body>
+</html>
+
+
